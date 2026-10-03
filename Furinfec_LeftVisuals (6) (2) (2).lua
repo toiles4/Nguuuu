@@ -5129,3 +5129,290 @@ LocalPlayer.CharacterAdded:Connect(function(Character)
         end
     end
 end)
+--==================================================
+-- TAB 6 - COLLECTION
+--==================================================
+
+local Tab6 = Window:AddTab("Collection", "package")
+
+local Tab6Automation =
+    Tab6:AddLeftGroupbox("Automation")
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+local function GetRoot()
+    local Character = LocalPlayer.Character
+    return Character and Character:FindFirstChild("HumanoidRootPart")
+end
+
+--==================================================
+-- AUTO COLLECTION V2
+--==================================================
+
+Tab6Automation:AddToggle("AutoCollectionV2", {
+    Text = "Auto Collection v2",
+    Default = false,
+
+    Callback = function(Value)
+
+        if not Value then
+            return
+        end
+
+        task.spawn(function()
+
+            while Library.Toggles.AutoCollectionV2.Value do
+
+                local Character = LocalPlayer.Character
+
+                if Character then
+
+                    -- Proxy range 30
+                    for _, Object in ipairs(
+                        workspace:GetDescendants()
+                    ) do
+
+                        if Object:IsA("ProximityPrompt") then
+                            pcall(function()
+                                Object.MaxActivationDistance = 30
+                            end)
+                        end
+                    end
+                end
+
+                task.wait(1)
+            end
+        end)
+    end,
+})
+
+--==================================================
+-- AUTO ZAJA DESTORY
+--==================================================
+
+local CollectionMode = "Tween"
+local CollectionTween = nil
+local CollectionRunning = false
+
+local function GetEventMobs()
+    local WorldMobs =
+        workspace:FindFirstChild("World Mobs")
+
+    return WorldMobs
+        and WorldMobs:FindFirstChild("Event Mobs")
+end
+
+local function BossExists()
+
+    local EventMobs = GetEventMobs()
+
+    if not EventMobs then
+        return false
+    end
+
+    return
+        EventMobs:FindFirstChild("Zaja") ~= nil
+        or EventMobs:FindFirstChild("Destorys") ~= nil
+end
+
+local function GetArenas()
+
+    local WorldMap =
+        workspace:FindFirstChild("World Map")
+
+    local SecretBossArea =
+        WorldMap
+        and WorldMap:FindFirstChild("SecretBossArea")
+
+    local Arenas = {}
+
+    if not SecretBossArea then
+        return Arenas
+    end
+
+    for _, Object in ipairs(
+        SecretBossArea:GetDescendants()
+    ) do
+
+        if string.find(
+            string.lower(Object.Name),
+            "arena"
+        ) then
+
+            local Part
+
+            if Object:IsA("BasePart") then
+                Part = Object
+
+            elseif Object:IsA("Model") then
+                Part =
+                    Object.PrimaryPart
+                    or Object:FindFirstChildWhichIsA(
+                        "BasePart",
+                        true
+                    )
+            end
+
+            if Part then
+                table.insert(Arenas, Part)
+            end
+        end
+    end
+
+    table.sort(Arenas, function(A, B)
+        return A:GetFullName() < B:GetFullName()
+    end)
+
+    return Arenas
+end
+
+local function MoveToArena(Target)
+
+    local Root = GetRoot()
+
+    if not Root or not Target then
+        return
+    end
+
+    local TargetCFrame =
+        Target.CFrame + Vector3.new(0, 3, 0)
+
+    local Distance =
+        (Target.Position - Root.Position).Magnitude
+
+    local Time =
+        math.max(Distance / 300, 0.05)
+
+    if CollectionTween then
+        pcall(function()
+            CollectionTween:Cancel()
+        end)
+    end
+
+    CollectionTween =
+        TweenService:Create(
+            Root,
+            TweenInfo.new(
+                Time,
+                Enum.EasingStyle.Linear
+            ),
+            {
+                CFrame = TargetCFrame
+            }
+        )
+
+    CollectionTween:Play()
+    CollectionTween.Completed:Wait()
+
+    CollectionTween = nil
+end
+
+Tab6Automation:AddDropdown("ZajaDestoryMode", {
+    Values = {
+        "Tween",
+        "Teleport"
+    },
+
+    Default = "Tween",
+    Multi = false,
+    Text = "Mode",
+
+    Callback = function(Value)
+        CollectionMode = Value
+    end,
+})
+
+Tab6Automation:AddToggle("AutoZajaDestory", {
+    Text = "Auto Zaja Destory",
+    Default = false,
+
+    Callback = function(Value)
+
+        if not Value then
+
+            if CollectionTween then
+                pcall(function()
+                    CollectionTween:Cancel()
+                end)
+
+                CollectionTween = nil
+            end
+
+            CollectionRunning = false
+            return
+        end
+
+        if CollectionRunning then
+            return
+        end
+
+        CollectionRunning = true
+
+        task.spawn(function()
+
+            local ArenaIndex = 1
+
+            while Library.Toggles.AutoZajaDestory.Value do
+
+                -- Zaja hoặc Destorys xuất hiện
+                -- => DỪNG teleport/tween
+                if BossExists() then
+                    task.wait(0.5)
+                    continue
+                end
+
+                local Arenas = GetArenas()
+
+                if #Arenas == 0 then
+                    task.wait(1)
+                    continue
+                end
+
+                if ArenaIndex > #Arenas then
+                    ArenaIndex = 1
+                end
+
+                local Target = Arenas[ArenaIndex]
+
+                local Root = GetRoot()
+
+                if Root and Target then
+
+                    local TargetCFrame =
+                        Target.CFrame
+                        + Vector3.new(0, 3, 0)
+
+                    if CollectionMode == "Teleport" then
+
+                        Root.CFrame = TargetCFrame
+
+                    else
+
+                        MoveToArena(Target)
+                    end
+                end
+
+                ArenaIndex += 1
+
+                -- Chờ 10 giây.
+                -- Nếu Zaja/Destorys xuất hiện thì dừng ngay.
+                local Elapsed = 0
+
+                while Elapsed < 10
+                    and Library.Toggles.AutoZajaDestory.Value do
+
+                    if BossExists() then
+                        break
+                    end
+
+                    task.wait(0.2)
+                    Elapsed += 0.2
+                end
+            end
+
+            CollectionRunning = false
+        end)
+    end,
+})
